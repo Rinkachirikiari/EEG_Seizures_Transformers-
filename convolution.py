@@ -21,13 +21,13 @@ from einops.layers.torch import Rearrange, Reduce
 # Convolution module
 # use conv to capture local features, instead of postion embedding.
 class PatchEmbedding(nn.Module):
-    def __init__(self, emb_size=40):
+    def __init__(self, emb_size=40, nb_channels = 23):
         # self.patch_size = patch_size
         super().__init__()
 
         self.shallownet = nn.Sequential(
             nn.Conv2d(1, 40, (1, 25), (1, 1)),
-            nn.Conv2d(40, 40, (22, 1), (1, 1)),
+            nn.Conv2d(40, 40, (nb_channels, 1), (1, 1)),
             nn.BatchNorm2d(40),
             nn.ELU(),
             nn.AvgPool2d((1, 75), (1, 15)),  # pooling acts as slicing to obtain 'patch' along the time dimension as in ViT
