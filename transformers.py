@@ -11,6 +11,12 @@ import torchvision.transforms as T
 
 import matplotlib.pyplot as plt
 
+from torch import nn
+from torch import Tensor
+from PIL import Image
+from torchvision.transforms import Compose, Resize, ToTensor
+from einops import rearrange, reduce, repeat
+from einops.layers.torch import Rearrange, Reduce
 
 class AttentionHead(nn.Module):
     def __init__(self, dim_embed: int, head_size: int, dropout: float):
@@ -113,3 +119,29 @@ class TransformerEncoderBlock(nn.Sequential):
 class TransformerEncoder(nn.Sequential):
     def __init__(self, depth, emb_size):
         super().__init__(*[TransformerEncoderBlock(emb_size) for _ in range(depth)])
+
+
+class ClassificationHead(nn.Sequential):
+    def __init__(self, emb_size, n_classes):
+        super().__init__()
+        
+        # global average pooling
+        self.clshead = nn.Sequential(
+            Reduce('b n e -> b e', reduction='mean'),
+            nn.LayerNorm(emb_size),
+            nn.Linear(emb_size, n_classes)
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(2440, 256), # Il faudra vérifier l'input size de nos données (dans ce cas là c'est output du Transformers)
+            nn.ELU(),
+            nn.Dropout(0.5),
+            nn.Linear(256, 32),
+            nn.ELU(),
+            nn.Dropout(0.3),
+            nn.Linear(32, 2) # On a 2 classes !
+        )
+
+    def forward(self, x):
+        x = x.contiguous().view(x.size(0), -1)
+        out = self.fc(x)
+        return x, out
