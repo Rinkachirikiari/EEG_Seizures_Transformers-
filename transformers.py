@@ -62,9 +62,9 @@ class MultiHeadAttention(nn.Module):
             
             self.dropout = nn.Dropout(dropout)
         
-        def forward(self, q, k, v, mask=None):
+        def forward(self, x, mask=None):
             
-            out = torch.cat([h(q, k, v, mask) for h in self.heads], dim=-1)
+            out = torch.cat([h(x, x, x, mask) for h in self.heads], dim=-1)
             
             return self.dropout(self.fc(out))
         
@@ -120,28 +120,28 @@ class TransformerEncoderBlock(nn.Sequential):
             ))
 
 class TransformerEncoder(nn.Sequential):
-    def __init__(self, depth, emb_size):
-        super().__init__(*[TransformerEncoderBlock(emb_size) for _ in range(depth)])
+    def __init__(self, depth, dim_embed):
+        super().__init__(*[TransformerEncoderBlock(dim_embed) for _ in range(depth)])
 
 
 class ClassificationHead(nn.Sequential):
-    def __init__(self, emb_size, n_classes):
+    def __init__(self, dim_embed, n_classes):
         super().__init__()
         
         # global average pooling
         self.clshead = nn.Sequential(
             Reduce('b n e -> b e', reduction='mean'),
-            nn.LayerNorm(emb_size),
-            nn.Linear(emb_size, n_classes)
+            nn.LayerNorm(dim_embed),
+            nn.Linear(dim_embed, n_classes)
         )
         self.fc = nn.Sequential(
-            nn.Linear(2440, 256), # Il faudra vérifier l'input size de nos données (dans ce cas là c'est output du Transformers)
+            nn.Linear(1018*40, 256), # Il faudra vérifier l'input size de nos données (dans ce cas là c'est output du Transformers)
             nn.ELU(),
             nn.Dropout(0.5),
             nn.Linear(256, 32),
             nn.ELU(),
             nn.Dropout(0.3),
-            nn.Linear(32, 2) # On a 2 classes !
+            nn.Linear(32, n_classes) # On a 2 classes !
         )
 
     def forward(self, x):
