@@ -99,19 +99,22 @@ class TransformerEncoderBlock(nn.Sequential):
     def __init__(self,
                  dim_embed,
                  num_heads=10,
+                 head_size = 512,
                  drop_p=0.5,
                  forward_expansion=4,
                  forward_drop_p=0.5):
+        
         super().__init__(
             ResidualAdd(nn.Sequential(
                 nn.LayerNorm(dim_embed),
-                MultiHeadAttention(dim_embed, num_heads, drop_p),
+                MultiHeadAttention(num_heads, dim_embed, head_size, drop_p),
                 nn.Dropout(drop_p)
             )),
+
             ResidualAdd(nn.Sequential(
                 nn.LayerNorm(dim_embed),
                 FeedForwardBlock(
-                    dim_embed, expansion=forward_expansion, drop_p=forward_drop_p),
+                    dim_embed, expansion=forward_expansion, drop=forward_drop_p),
                 nn.Dropout(drop_p)
             )
             ))

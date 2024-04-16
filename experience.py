@@ -14,6 +14,7 @@ import time
 import datetime
 import sys
 import scipy.io
+import mne
 
 import torch
 import torch.nn as nn
@@ -89,6 +90,46 @@ class ExP():
         self.model = Conformer().cuda()
         self.model = nn.DataParallel(self.model, device_ids=[i for i in range(len(gpus))])
         self.model = self.model.cuda()
+
+    def separate_data_intervals(file_str, seizure_presence):
+        # Durée de chaque intervalle en secondes (5 minutes)
+        interval_duration = 5 * 60
+
+        raw = mne.io.read_raw_edf(file_str)
+        #data, times = raw[:, :]
+        total_duration = raw.times[-1] # en secondes
+
+        # Nombre total d'intervalle de 10 minutes
+        num_intervals = int(total_duration / interval_duration)
+        labels = []
+        data = []
+
+        # Diviser les données en intervalles de 10 minutes
+        for i in range(num_intervals):
+            # Calculer le temps de début et de fin de chaque intervalle
+            start_time = i * interval_duration
+            end_time = (i + 1) * interval_duration
+
+            # Convertir le temps en indice
+            start_idx = raw.time_as_index(start_time)
+            end_idx = raw.time_as_index(end_time)
+
+            # Extraire les données de l'intervalle
+            interval_data, interval_times = raw[:, start_idx:end_idx]
+            data.append(interval_data)
+            if file_str in seizure_presence.keys():
+                is_seizure = False
+                for start_seizure, end_seizure in seizure_presence[file_str]:
+                    if (start_seizure >= start_time and start_seizure <= end_time) or (end_seizure >= start_time and end_seizure <= end_time) or (start_seizure <= start_time and end_seizure >= end_time):
+                        is_seizure = True
+                        break
+                if is_seizure:
+                    labels.append(1)
+                else:
+                    labels.append(0)
+            else:
+                labels.append(0)
+        return data, labels
         
 
     def train(self, train_data, train_label, test_data, test_label):
