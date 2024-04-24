@@ -9,7 +9,6 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
-
 from model.conformer import Conformer
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
@@ -24,7 +23,7 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
 
     best_val_loss = float('inf')
     patience_counter = 0
-    #scaler = GradScaler()
+    scaler = GradScaler()
     model.train()
     for epoch in range(num_epochs):
         epoch_loss = 0.0
@@ -39,10 +38,11 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
 
             with autocast():
                 outputs = model(inputs)
-                y_hat = torch.argmax(outputs, dim=1).float()
-                y_hat = y_hat.requires_grad_()
-                loss = criterion(y_hat, targets)
-            loss.backward()
+            with autocast(enabled=False):
+                loss = criterion(outputs.float(), targets.long())
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             _, predicted = torch.max(outputs.data, 1)
             total_correct += (predicted == targets).sum().item()
@@ -101,10 +101,10 @@ def validation(model, loader, criterion, patient):
 
     with torch.no_grad():
         for inputs, targets in loader:
-            outputs = model(inputs)
-            y_hat = torch.argmax(outputs, dim=1).float()
+            with autocast():
+                outputs = model(inputs)
+                loss = criterion(outputs, targets.long())
 
-            loss = criterion(y_hat, targets)
             validation_loss += loss.item() * inputs.size(0)
             _, predicted = torch.max(outputs, 1)
             correct_predictions += (predicted == targets).sum().item()
@@ -198,22 +198,29 @@ def compute_weight(y_train, y_val):
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
+    def __init__(self, alpha=None, gamma=2.0, reduction='mean', device=torch.device('cpu')):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction
+        self.device = device
 
     def forward(self, inputs, targets):
-        # Assuming inputs are raw logits and targets are class indices
-        ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')  # Cross entropy loss
-        pt = torch.exp(-ce_loss)  # pt is the exponential of the negative CE loss (probabilities)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss  # Focal loss formula
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
+        ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
+
+        # Get the probabilities of the targets
+        pt = torch.exp(-ce_loss)
+        if self.alpha is not None:
+            self.alpha = self.alpha.to(inputs.device)[targets]
+
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
 
         if self.reduction == 'mean':
-            return torch.mean(focal_loss)
+            return focal_loss.mean()
         elif self.reduction == 'sum':
-            return torch.sum(focal_loss)
+            return focal_loss.sum()
         else:
             return focal_loss
 
@@ -265,8 +272,8 @@ def main():
         # Define the loss function with weights
         # criterion = nn.CrossEntropyLoss(weight=weights)
         # criterion = WeightedMSELoss(weight=weights)
-        # criterion = FocalLoss(alpha=0.25, gamma=2.0)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+        criterion = FocalLoss(alpha=torch.tensor([0.05, 0.95], dtype=torch.float32), gamma=2.0, device=device)
+        # criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
 
         model, history = train_model(model, train_loader, val_loader, device, criterion, num_epochs=num_epochs,
                                      patience=10, patient=patient)
