@@ -1,57 +1,28 @@
-
-import argparse
 import os
 gpus = [0]
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
 os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, gpus))
 import numpy as np
-import math
-import glob
 import random
-import itertools
-import datetime
 import time
 import datetime
-import sys
-import scipy.io
 import mne
 
-import torch
-import torch.nn as nn
 from torch.utils.data import Dataset
-from PIL import Image
-import torchvision.transforms as transforms
-from sklearn.decomposition import PCA
 
 import torch
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
 
-import torchvision.transforms as transforms
-from torchvision.utils import save_image, make_grid
-
-from torch.utils.data import DataLoader
 from torch.autograd import Variable
-import torch.autograd as autograd
-from torchvision.models import vgg19
 
 from torch import nn
-from torch import Tensor
-from PIL import Image
-from torchvision.transforms import Compose, Resize, ToTensor
-from einops import rearrange, reduce, repeat
-from einops.layers.torch import Rearrange, Reduce
 # from common_spatial_pattern import csp
 
-import matplotlib.pyplot as plt
 # from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 cudnn.benchmark = False
 cudnn.deterministic = True
 
-import transformers
-import convolution
-
+from model import convolution, transformers
 
 
 class Conformer(nn.Sequential):
