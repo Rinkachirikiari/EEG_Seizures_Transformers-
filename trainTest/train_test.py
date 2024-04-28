@@ -36,13 +36,14 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
         for inputs, targets in train_loader:
             optimizer.zero_grad()
 
-            with autocast():
-                outputs = model(inputs)
-            with autocast(enabled=False):
-                loss = criterion(outputs.float(), targets.long())
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            #with autocast():
+            outputs = model(inputs)
+            y_hat = torch.argmax(outputs, dim=1).float()
+            y_hat = y_hat.requires_grad_()
+            loss = criterion(y_hat, targets)
+
+            #scaler.step(optimizer)
+            #scaler.update()
 
             _, predicted = torch.max(outputs.data, 1)
             total_correct += (predicted == targets).sum().item()
@@ -55,6 +56,9 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
 
             progress_bar.set_postfix(loss=(epoch_loss / epoch_samples), accuracy=(total_correct / epoch_samples))
             progress_bar.update(1)
+
+            loss.backward()
+            optimizer.step()
 
         progress_bar.close()
 
@@ -72,7 +76,7 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
         plt.title('Matrice confusion Train')
         plt.xlabel('Prédit')
         plt.ylabel('Target')
-        plt.savefig(f'confusion/matrice_confusion_train_{patient}.png')
+        plt.savefig(f'confusion_all_patients/matrice_confusion_train_{patient}.png')
         plt.close()
 
         # file.write(
@@ -101,9 +105,15 @@ def validation(model, loader, criterion, patient):
 
     with torch.no_grad():
         for inputs, targets in loader:
-            with autocast():
-                outputs = model(inputs)
-                loss = criterion(outputs, targets.long())
+            #with autocast():
+            #    outputs = model(inputs)
+            #with autocast(enabled=False):
+            #    loss = criterion(outputs.float(), targets.long())
+
+            outputs = model(inputs)
+            y_hat = torch.argmax(outputs, dim=1).float()
+            y_hat = y_hat.requires_grad_()
+            loss = criterion(y_hat, targets)
 
             validation_loss += loss.item() * inputs.size(0)
             _, predicted = torch.max(outputs, 1)
@@ -120,7 +130,7 @@ def validation(model, loader, criterion, patient):
     plt.title('Matrice confusion Validation')
     plt.xlabel('Prédit')
     plt.ylabel('Target')
-    plt.savefig(f'confusion/matrice_confusion_validation_{patient}.png')
+    plt.savefig(f'confusion_all_patients/matrice_confusion_validation_{patient}.png')
     plt.close()
 
     return avg_validation_loss, validation_accuracy, conf_matrix
@@ -155,7 +165,7 @@ def test_model(model, test_loader, device, patient):
     plt.title('Confusion Matrix Test')
     plt.xlabel('Predicted')
     plt.ylabel('True')
-    plt.savefig(f'confusion/matrice_confusion_test_{patient}.png')
+    plt.savefig(f'confusion_all_patients/matrice_confusion_test_{patient}.png')
     plt.close()
 
 
@@ -194,7 +204,7 @@ def compute_weight(y_train, y_val):
     total_ones = train_ones + val_ones
     total = total_zeros + total_ones
 
-    return torch.tensor([total_zeros / total_ones], dtype=torch.float32)
+    return torch.tensor([total_zeros/(1.6*train_ones)], dtype=torch.float32)
 
 
 class FocalLoss(nn.Module):
@@ -210,7 +220,6 @@ class FocalLoss(nn.Module):
         targets = targets.to(self.device)
         ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
 
-        # Get the probabilities of the targets
         pt = torch.exp(-ce_loss)
         if self.alpha is not None:
             self.alpha = self.alpha.to(inputs.device)[targets]
@@ -248,40 +257,44 @@ def main():
     device = torch.device("cuda" if use_gpu else "cpu")
 
     file_path = '../data/patients/'
+    datas = []
+    labels = []
     for patient in os.listdir(file_path):
-        data, labels = load_data(os.path.join(file_path, patient))
+        data_patient, labels_patient = load_data(os.path.join(file_path, patient))
+        datas.extend(data_patient)
+        labels.extend(labels_patient)
 
-        X_train, X_val, X_test, y_train, y_val, y_test = split_data(data, labels)
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(datas, labels)
 
-        train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32).to(device),
-                                      torch.tensor(y_train, dtype=torch.float32).to(device))
-        val_dataset = TensorDataset(torch.tensor(X_val, dtype=torch.float32).to(device),
-                                    torch.tensor(y_val, dtype=torch.float32).to(device))
-        test_dataset = TensorDataset(torch.tensor(X_test, dtype=torch.float32).to(device),
-                                     torch.tensor(y_test, dtype=torch.float32).to(device))
+    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32).to(device),
+                                  torch.tensor(y_train, dtype=torch.float32).to(device))
+    val_dataset = TensorDataset(torch.tensor(X_val, dtype=torch.float32).to(device),
+                                torch.tensor(y_val, dtype=torch.float32).to(device))
+    test_dataset = TensorDataset(torch.tensor(X_test, dtype=torch.float32).to(device),
+                                 torch.tensor(y_test, dtype=torch.float32).to(device))
 
-        train_loader = DataLoader(train_dataset, batch_size=50, shuffle=True, num_workers=0)
-        val_loader = DataLoader(val_dataset, batch_size=50, shuffle=False, num_workers=0)
-        test_loader = DataLoader(test_dataset, batch_size=50, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=20, shuffle=False, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=20, shuffle=False, num_workers=0)
 
-        num_epochs = 5
-        model = Conformer().to(device)
+    num_epochs = 5
+    model = Conformer().to(device)
 
-        weights = compute_weight(y_train, y_val)
-        weights = weights.to(device)
-        # Define the loss function with weights
-        # criterion = nn.CrossEntropyLoss(weight=weights)
-        # criterion = WeightedMSELoss(weight=weights)
-        criterion = FocalLoss(alpha=torch.tensor([0.05, 0.95], dtype=torch.float32), gamma=2.0, device=device)
-        # criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+    weights = compute_weight(y_train, y_val)
+    weights = weights.to(device)
+    # Define the loss function with weights
+    # criterion = nn.CrossEntropyLoss(weight=weights)
+    # criterion = WeightedMSELoss(weight=weights)
+    # criterion = FocalLoss(alpha=torch.tensor([0.05, 0.95], dtype=torch.float32), gamma=2.0, device=device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
 
-        model, history = train_model(model, train_loader, val_loader, device, criterion, num_epochs=num_epochs,
-                                     patience=10, patient=patient)
+    model, history = train_model(model, train_loader, val_loader, device, criterion, num_epochs=num_epochs,
+                                 patience=10, patient=patient)
 
-        plot_training_history(history, patient)
+    plot_training_history(history, patient)
 
-        test_model(model, test_loader, device, patient)
-        exit()
+    test_model(model, test_loader, device, patient)
+    exit()
 
 
 if __name__ == "__main__":
