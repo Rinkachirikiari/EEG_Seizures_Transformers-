@@ -12,13 +12,13 @@ from tqdm import tqdm
 from model.conformer import Conformer
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
-from data.load_data import load_data
+from data.load_data import load_data, check_memory_usage
 from trainTest.split_data import split_data
 
 
 def train_model(model, train_loader, validation_loader, device, criterion, num_epochs, patience, patient):
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=0.05)
-    scheduler = OneCycleLR(optimizer, max_lr=0.001, total_steps=num_epochs * len(train_loader))
+    scheduler = OneCycleLR(optimizer, max_lr=0.0008, total_steps=num_epochs * len(train_loader))
     history = {'train_loss': [], 'train_accuracy': [], 'val_loss': [], 'val_accuracy': []}
 
     best_val_loss = float('inf')
@@ -36,14 +36,14 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
         for inputs, targets in train_loader:
             optimizer.zero_grad()
 
-            #with autocast():
+            # with autocast():
             outputs = model(inputs)
             y_hat = torch.argmax(outputs, dim=1).float()
             y_hat = y_hat.requires_grad_()
             loss = criterion(y_hat, targets)
 
-            #scaler.step(optimizer)
-            #scaler.update()
+            # scaler.step(optimizer)
+            # scaler.update()
 
             _, predicted = torch.max(outputs.data, 1)
             total_correct += (predicted == targets).sum().item()
@@ -105,9 +105,9 @@ def validation(model, loader, criterion, patient):
 
     with torch.no_grad():
         for inputs, targets in loader:
-            #with autocast():
+            # with autocast():
             #    outputs = model(inputs)
-            #with autocast(enabled=False):
+            # with autocast(enabled=False):
             #    loss = criterion(outputs.float(), targets.long())
 
             outputs = model(inputs)
@@ -204,7 +204,7 @@ def compute_weight(y_train, y_val):
     total_ones = train_ones + val_ones
     total = total_zeros + total_ones
 
-    return torch.tensor([total_zeros/(1.6*train_ones)], dtype=torch.float32)
+    return torch.tensor([total_zeros / (1 * train_ones)], dtype=torch.float32)
 
 
 class FocalLoss(nn.Module):
@@ -240,9 +240,7 @@ class WeightedMSELoss(nn.Module):
         self.weights = weights
 
     def forward(self, outputs, targets):
-        # Ensure the targets are the same shape as outputs
         targets = targets.expand_as(outputs)
-        # Calculate the squared differences, multiply by weights, and then take the mean
         return torch.mean(self.weights * (outputs - targets) ** 2)
 
 
@@ -257,14 +255,28 @@ def main():
     device = torch.device("cuda" if use_gpu else "cpu")
 
     file_path = '../data/patients/'
-    datas = []
-    labels = []
-    for patient in os.listdir(file_path):
-        data_patient, labels_patient = load_data(os.path.join(file_path, patient))
-        datas.extend(data_patient)
-        labels.extend(labels_patient)
 
-    X_train, X_val, X_test, y_train, y_val, y_test = split_data(datas, labels)
+    patient_array = np.zeros((40000, 23, 2560), dtype=np.float32)
+    label_array = np.zeros((40000,), dtype=np.int8)
+    patients_list = ["under_sample_chb01", "under_sample_chb02", "under_sample_chb03",
+                     "under_sample_chb05", "under_sample_chb06", "under_sample_chb07",
+                     "under_sample_chb08", "under_sample_chb23", "under_sample_chb24"]
+    index = 0
+    memory_limit = 12000
+    for patient in patients_list:
+        check_memory_usage(memory_limit)
+
+        data_patient, labels_patient = load_data(os.path.join(file_path, patient))
+        num_samples = data_patient.shape[0]
+        check_memory_usage(memory_limit)
+        patient_array[index:index + num_samples] = data_patient
+        label_array[index:index + num_samples] = labels_patient
+        index += num_samples
+
+    patients_array = patient_array[:index]
+    labels_array = label_array[:index]
+
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(patients_array, labels_array)
 
     train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32).to(device),
                                   torch.tensor(y_train, dtype=torch.float32).to(device))
@@ -298,6 +310,4 @@ def main():
 
 
 if __name__ == "__main__":
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-    mp.set_start_method('spawn')
     main()
