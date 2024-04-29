@@ -17,8 +17,8 @@ from trainTest.split_data import split_data
 
 
 def train_model(model, train_loader, validation_loader, device, criterion, num_epochs, patience, patient):
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=0.05)
-    scheduler = OneCycleLR(optimizer, max_lr=0.0008, total_steps=num_epochs * len(train_loader))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
+    scheduler = OneCycleLR(optimizer, max_lr=0.0001, total_steps=num_epochs * len(train_loader))
     history = {'train_loss': [], 'train_accuracy': [], 'val_loss': [], 'val_accuracy': []}
 
     best_val_loss = float('inf')
@@ -38,9 +38,9 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
 
             # with autocast():
             outputs = model(inputs)
-            y_hat = torch.argmax(outputs, dim=1).float()
-            y_hat = y_hat.requires_grad_()
-            loss = criterion(y_hat, targets)
+            # y_hat = torch.argmax(outputs, dim=1).float()
+            # y_hat = y_hat.requires_grad_()
+            loss = criterion(outputs, targets)
 
             # scaler.step(optimizer)
             # scaler.update()
@@ -76,11 +76,8 @@ def train_model(model, train_loader, validation_loader, device, criterion, num_e
         plt.title('Matrice confusion Train')
         plt.xlabel('Prédit')
         plt.ylabel('Target')
-        plt.savefig(f'confusion_all_patients/matrice_confusion_train_{patient}.png')
+        plt.savefig(f'confusion_all_patients/matrice_confusion_train.png')
         plt.close()
-
-        # file.write(
-        #    f"Epoch [{num_epochs + 1}/{num_epochs}], Training Loss: {training_loss:.4f}, Training Accuracy: {training_accuracy:.4f}, Validation Loss: {validation_loss:.4f}, Validation Accuracy: {validation_accuracy:.4f}\n")
 
         if validation_loss < best_val_loss:
             best_val_loss = validation_loss
@@ -111,9 +108,9 @@ def validation(model, loader, criterion, patient):
             #    loss = criterion(outputs.float(), targets.long())
 
             outputs = model(inputs)
-            y_hat = torch.argmax(outputs, dim=1).float()
-            y_hat = y_hat.requires_grad_()
-            loss = criterion(y_hat, targets)
+            #y_hat = torch.argmax(outputs, dim=1).float()
+            #y_hat = y_hat.requires_grad_()
+            loss = criterion(outputs, targets)
 
             validation_loss += loss.item() * inputs.size(0)
             _, predicted = torch.max(outputs, 1)
@@ -130,7 +127,7 @@ def validation(model, loader, criterion, patient):
     plt.title('Matrice confusion Validation')
     plt.xlabel('Prédit')
     plt.ylabel('Target')
-    plt.savefig(f'confusion_all_patients/matrice_confusion_validation_{patient}.png')
+    plt.savefig(f'confusion_all_patients/matrice_confusion_validation.png')
     plt.close()
 
     return avg_validation_loss, validation_accuracy, conf_matrix
@@ -165,7 +162,7 @@ def test_model(model, test_loader, device, patient):
     plt.title('Confusion Matrix Test')
     plt.xlabel('Predicted')
     plt.ylabel('True')
-    plt.savefig(f'confusion_all_patients/matrice_confusion_test_{patient}.png')
+    plt.savefig(f'confusion_all_patients/matrice_confusion_test.png')
     plt.close()
 
 
@@ -204,26 +201,25 @@ def compute_weight(y_train, y_val):
     total_ones = train_ones + val_ones
     total = total_zeros + total_ones
 
-    return torch.tensor([total_zeros / (1 * train_ones)], dtype=torch.float32)
+    return total, total_zeros, total_ones
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=None, gamma=2.0, reduction='mean', device=torch.device('cpu')):
+    def __init__(self, alpha=1, gamma=2.0, reduction='mean', device=torch.device('cpu')):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction
         self.device = device
 
-    def forward(self, inputs, targets):
-        inputs = inputs.to(self.device)
-        targets = targets.to(self.device)
-        ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
+    def forward(self, outputs, targets):
+        targets = targets.long().to(self.device)
+        num_classes = outputs.shape[1]
+        one_hot_targets = nn.functional.one_hot(targets, num_classes=num_classes).float().to(device=self.device)
+
+        ce_loss = nn.functional.binary_cross_entropy_with_logits(outputs, one_hot_targets, reduction='none')
 
         pt = torch.exp(-ce_loss)
-        if self.alpha is not None:
-            self.alpha = self.alpha.to(inputs.device)[targets]
-
         focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
 
         if self.reduction == 'mean':
@@ -292,13 +288,13 @@ def main():
     num_epochs = 5
     model = Conformer().to(device)
 
-    weights = compute_weight(y_train, y_val)
-    weights = weights.to(device)
+    total, total_zeros, total_ones = compute_weight(y_train, y_val)
+    weights = torch.tensor([total_ones/total, total_zeros/total], dtype=torch.float32).to(device)
     # Define the loss function with weights
     # criterion = nn.CrossEntropyLoss(weight=weights)
     # criterion = WeightedMSELoss(weight=weights)
-    # criterion = FocalLoss(alpha=torch.tensor([0.05, 0.95], dtype=torch.float32), gamma=2.0, device=device)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+    criterion = FocalLoss(alpha=weights, gamma=2.0, device=device)
+    #criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
 
     model, history = train_model(model, train_loader, val_loader, device, criterion, num_epochs=num_epochs,
                                  patience=10, patient=patient)
