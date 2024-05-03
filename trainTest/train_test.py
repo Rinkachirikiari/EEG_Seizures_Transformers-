@@ -14,6 +14,7 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 from data.load_data import load_data, check_memory_usage
 from trainTest.split_data import split_data
+from trainTest.augment_data import augment_data
 
 
 def train_model(model, train_loader, validation_loader, device, criterion, num_epochs, patience, patient):
@@ -255,8 +256,8 @@ def main():
     patient_array = np.zeros((40000, 23, 2560), dtype=np.float32)
     label_array = np.zeros((40000,), dtype=np.int8)
     patients_list = ["under_sample_chb01", "under_sample_chb02", "under_sample_chb03",
-                     "under_sample_chb05", "under_sample_chb06", "under_sample_chb07",
-                     "under_sample_chb08", "under_sample_chb23", "under_sample_chb24"]
+                     "under_sample_chb05", "under_sample_chb06", "under_sample_chb07"]
+                     #"under_sample_chb08", "under_sample_chb23", "under_sample_chb24"]
     index = 0
     memory_limit = 12000
     for patient in patients_list:
@@ -272,13 +273,15 @@ def main():
     patients_array = patient_array[:index]
     labels_array = label_array[:index]
 
-    X_train, X_val, X_test, y_train, y_val, y_test = split_data(patients_array, labels_array)
+    x_train, x_val, x_test, y_train, y_val, y_test = split_data(patients_array, labels_array)
 
-    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32).to(device),
+    x_train, y_train = augment_data(x_train, y_train)
+
+    train_dataset = TensorDataset(torch.tensor(x_train, dtype=torch.float32).to(device),
                                   torch.tensor(y_train, dtype=torch.float32).to(device))
-    val_dataset = TensorDataset(torch.tensor(X_val, dtype=torch.float32).to(device),
+    val_dataset = TensorDataset(torch.tensor(x_val, dtype=torch.float32).to(device),
                                 torch.tensor(y_val, dtype=torch.float32).to(device))
-    test_dataset = TensorDataset(torch.tensor(X_test, dtype=torch.float32).to(device),
+    test_dataset = TensorDataset(torch.tensor(x_test, dtype=torch.float32).to(device),
                                  torch.tensor(y_test, dtype=torch.float32).to(device))
 
     train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True, num_workers=0)
