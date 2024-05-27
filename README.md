@@ -1,6 +1,6 @@
 # EEG_Seizures_Transformers
 
-Equipe 7 - [...vos noms...], Fabrice Gagnon, Mathis Rezzouk
+Equipe 7 - [...vos noms...] Rayane Badji, Fabrice Gagnon, Mathis Rezzouk
 
 Université Laval - Québec - Canada 
 
