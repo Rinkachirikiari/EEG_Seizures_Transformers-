@@ -1,6 +1,6 @@
 # EEG_Seizures_Transformers
 
-Equipe 7 - [...vos noms...] Rayane Badji, Fabrice Gagnon, Mathis Rezzouk
+Equipe 7 - [...vos noms...], Fabrice Gagnon, Mathis Rezzouk
 
 Université Laval - Québec - Canada 
 
@@ -21,17 +21,3 @@ Enfin, le fichier RECORDS contient une liste des 664 fichiers .edf inclus dans c
 
 Dans l'ensemble, ces enregistrements comprennent 198 crises au total ; le début ([) et la fin (]) de chaque crise sont annotés dans les fichiers d'annotations .seizure qui accompagnent chacun des fichiers répertoriés dans RECORDS-WITH-SEIZURES. De plus, les fichiers nommés chbnn-summary.txt contiennent des informations sur le montage utilisé pour chaque enregistrement, ainsi que le temps écoulé en secondes depuis le début de chaque fichier .edf jusqu'au début et à la fin de chaque crise qu'il contient.
 
-# Petit point sur les classes débalancées
-source : https://link.springer.com/article/10.1186/s40537-019-0192-5
-
-Dans notre problème, on fait face à un débalancement intrinsèque, en effet il s'agit de la répartition naturelle des données. Dans notre cadre d'étude, il est impossible de trouver un jeu de données dans lequel le nombre de segments avec une crise est le même que le nombre de segment sans crise, à moins de ne supprimer un nombre conséquent de segment sans crise. Ce qui nous intéresse le plus est de détecter les crises d'épilepsie, il sera donc important pour nous de détecter la classe minoritaire.
-
-## Métriques de performances
-
-Habituellement, la métrique de performance utilisée est l'exactitude. Nous ne pourrons pas utiliser cette métrique car si notre classificateur donne pour 100% des cas une absence de crise, son exactitude serait de 77% avant la séparation des segments en sous-segments. La séparation en sous-segment augmente l'exactitude.
-
-Pour cela, il est possible d'utiliser la F-Mesure, en favorisant avec un beta approprié la précision mais en prenant tout de même en compte les faux négatifs avec le rappel.
-
-## Changer la fonction de perte 
-
-La fonction de perte MSE couramment utilisée ne permet as de prendre en compte les débalancements de classe. De nouvelles fonctions de pertes ont été introduites : MFE et MFSE.
